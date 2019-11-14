@@ -36,13 +36,13 @@
 #define SINGLELEVEL_CONFIG CSR_PARAMRUN_ON | CSR_ESATARUN_OFF | CSR_ESATACLK_OFF
 // Filter control register
 //    FILCSR_WRITE_FILTERED | FILCSR_SKIP_UNFILTERED | FILCSR_DISABLE_FILTER
-#define FILTER_CONFIG FILCSR_WRITE_FILTERED | FILCSR_SKIP_UNFILTERED     
+#define FILTER_CONFIG FILCSR_WRITE_FILTERED | FILCSR_SKIP_UNFILTERED
 //#define FILTER_CONFIG          0   // Use this setting to disable the filter (write unfiltered only)
 #define DEFAULT_IDLE_PATTERN 0x0   // ppg output when run not in progress
 #define NET_PKT_SIZE        7000   // target size of event packets from grif
 #define TARGET_EVENT_SIZE  10000   // target size of midas events to disk
 
-char fename[STRING_LEN]="fegrif16_";
+char fename[STRING_LEN]="fegrif16_titan";
 
 /////////////////////////  Midas Variables ////////////////////////////////////
 const char *frontend_name = fename;                        /* fe MIDAS client name */
@@ -66,17 +66,23 @@ BANK_LIST trigger_bank_list[] = { /* online banks */
    {""},
 };
 EQUIPMENT equipment[] = {
-   {"Trigger",                                             /* equipment name */
-      {1, 0, "SYSTEM",                      /* event ID, trigger mask, Evbuf */
-       EQ_POLLED, 0, "MIDAS",         /* equipment type, EventSource, format */
-       TRUE, RO_RUNNING,                              /* enabled?, WhenRead? */
-       50, 0, 0, 0,                 /* poll[ms], Evt Lim, SubEvtLim, LogHist */
+   {"GRIF16",                                             /* equipment name */
+      {200, 0,
+      "SYSTEM",                      /* event ID, trigger mask, Evbuf */
+       EQ_POLLED,
+       0,
+       "MIDAS",         /* equipment type, EventSource, format */
+       TRUE,
+       RO_RUNNING,                              /* enabled?, WhenRead? */
+       50,
+       0,
+       0,
+       0,                 /* poll[ms], Evt Lim, SubEvtLim, LogHist */
        "", "", "",}, read_trigger_event,                  /* readout routine */
-    /*NULL, NULL, trigger_bank_list*/                           /* bank list */
+    NULL, NULL, trigger_bank_list,                          /* bank list */
    },
-   {"Scalar",                                              /* equipment name */
-    {2, 0, "SYSTEM",                        /* event ID, trigger mask, Evbuf */
-
+   {"GRIF16_Scalar",                                              /* equipment name */
+    {300, 0, "SYSTEM",                        /* event ID, trigger mask, Evbuf */
      EQ_PERIODIC, 0,                          /* equipment type, EventSource */
      "MIDAS", TRUE, RO_RUNNING | RO_ODB,      /* format, enabled?, WhenRead? */
      1000, 0, 0, 0,                 /* poll[ms], Evt Lim, SubEvtLim, LogHist */
@@ -139,18 +145,15 @@ int frontend_init()
    char tmp_str[STRING_LEN], **argv;
    int i, par, status, size, argc;
 
-   // to allow fe name to change, frontend_init() has been moved in mfe.c
-   // and is now called before the frontend connects to the odb
-   // i.e. calling any odb functions in frontend_init() will now fail
+   TRIGGER_SETTINGS_STR(trigger_settings_str); // Map odb Trigger/settings
+   sprintf(tmp_str, "/Equipment/GRIF16/Settings");
 
-   //TRIGGER_SETTINGS_STR(trigger_settings_str); // Map odb Trigger/settings
-   //sprintf(tmp_str, "/Equipment/Trigger/Settings");
-   //status = db_create_record(hDB, 0, tmp_str, strcomb(trigger_settings_str));
-   //status = db_find_key (hDB, 0, tmp_str, &hSet);
-   //if( status != DB_SUCCESS ) cm_msg(MINFO,"FE","Key %s not found", tmp_str);
-   //size = sizeof(TRIGGER_SETTINGS); // Enable hot-link on trigger/settings
-   //if( (status = db_open_record(hDB, hSet, &ts, size, MODE_READ, seq_callback,
-   //                              NULL)) != DB_SUCCESS){ return status; }
+   status = db_create_record(hDB, 0, tmp_str, strcomb(trigger_settings_str));
+   status = db_find_key (hDB, 0, tmp_str, &hSet);
+
+   if( status != DB_SUCCESS ) cm_msg(MINFO,"FE","Key %s not found", tmp_str);
+   size = sizeof(TRIGGER_SETTINGS); // Enable hot-link on trigger/settings
+   if( (status = db_open_record(hDB, hSet, &ts, size, MODE_READ, seq_callback, NULL)) != DB_SUCCESS){ return status; }
 
    mfe_get_args(&argc, &argv); // grab program arguments
    strcpy(tmp_str, DEFAULT_MASTER);
@@ -205,7 +208,7 @@ int frontend_init()
    printf("griffin init ... connecting to %s\n", tmp_str );
    if( (data_socket = open_udp_socket(tmp_str, DATA_PORT,&data_addr)) < 0 ){ ; }
    if( (cmd_socket  = open_udp_socket(tmp_str, CMD_PORT, &cmd_addr )) < 0 ){ ; }
-        
+
    printf("Writing parameters ...\n");
    if( master_grifc ){
       printf("   Setting Master GRIF-C ...\n");
@@ -219,7 +222,7 @@ int frontend_init()
       printf("    VME enabled   : %s\n",(par & CSR_ENABLE_VME )  ?"yes":"no ");
       printf("      Param RunCtrl : %s",(par & CSR_PARAMRUN_ON ) ?"yes":"no ");
       printf("    Esata RunCtrl : %s\n",(par & CSR_ESATARUN_OFF) ?"no ":"yes");
-      
+
       param_encode(msgbuf,PPG_VMEADDR, WRITE, GRIFC_PPGPAR,par=DEFAULT_VMEADDR);
       status = sndmsg(cmd_socket, &cmd_addr, msgbuf, 12, replybuf);
       printf("   Write VME address of PPG module[0x%08x], reply:%d bytes\n", par, status);
@@ -301,7 +304,8 @@ int begin_of_run(int run_number, char *error)
    int i, status, size;
 
    size = sizeof(TRIGGER_SETTINGS); /* read Triggger settings again ? */
-   if ((status = db_get_record (hDB, hSet, &ts, &size, 0)) != DB_SUCCESS){
+   printf("Got here 1\n");
+   if ((status = db_get_record(hDB, hSet, &ts, &size, 0)) != DB_SUCCESS) {
       return status;
    }
    printf("Writing parameters ...\n");
@@ -329,7 +333,7 @@ int begin_of_run(int run_number, char *error)
       param_encode(msgbuf, PARAM_SSCSR, WRITE, GRIF16_PAR, CSR_RUN);
    }
    i = sndmsg(cmd_socket, &cmd_addr, msgbuf, 12, replybuf); // 96/144 bits
-   printf("reply:%d bytes\n", i); 
+   printf("reply:%d bytes\n", i);
    //last_event_update = -1;
    printf("End of BOR\n");
    return SUCCESS;
@@ -349,7 +353,7 @@ int end_of_run(int run_number, char *error)
       param_encode(msgbuf, PARAM_SCCSR, WRITE, GRIF16_PAR, CSR_RUN);
    }
    i = sndmsg(cmd_socket, &cmd_addr, msgbuf, 12, replybuf); // 96/144 bits
-   printf("reply:%d bytes\n", i); 
+   printf("reply:%d bytes\n", i);
 
    dump_data_buffers(data_socket);
 
@@ -368,7 +372,7 @@ int end_of_run(int run_number, char *error)
    size = sizeof(EPICS_Rates);
    if( (db_set_value(hDB,0,tmp,&EPICS_Rates,size,size/sizeof(EPICS_Rates[0]),TID_FLOAT)) != DB_SUCCESS){
      cm_msg(MINFO,"FE","Can't set value for Key %s",tmp); return(-1);}
-   
+
 
    return SUCCESS;
 }
@@ -401,7 +405,7 @@ void printreply(int bytes)
 
 // param format ...
 //    parm [32bit] x50,41,52,4D
-//       1bit used in firmware + 15bit parnum 
+//       1bit used in firmware + 15bit parnum
 //       16bit addr: 4bit ctrl, 4bitgrifc, 4bit port, 4bit chan
 //       32bit val
 #define NUM_PPG_PATTERN 10
@@ -456,7 +460,7 @@ int write_settings(HNDLE hDB, HNDLE hSet) // odb, trigset
       if( get_filter_prog(hDB, hSet, filter_par, prescales, &winsize, &mask) != 0 ){
          cm_msg(MINFO,"FE","failed to read filter program"); return(-1);
       }
-      
+
       param_encode(msgbuf, PARAM_CSR, WRITE, GRIFC_FILPAR, par=FILTER_CONFIG);
       if( (size=sndmsg(cmd_socket, &cmd_addr, msgbuf, 12, replybuf)) != 4 ){
          cm_msg(MINFO,"FE","failed to write filter csr [%d bytes:%s]",
@@ -602,7 +606,7 @@ INT read_scalar_event(char *pevent, INT off)
    size = sizeof(EPICS_Rates);
    if( (db_set_value(hDB,0,tmp,&EPICS_Rates,size,size/sizeof(EPICS_Rates[0]),TID_FLOAT)) != DB_SUCCESS){
      cm_msg(MINFO,"FE","Can't set value for Key %s",tmp); return(-1);}
-   
+
     return bk_size(pevent);
 }
 
@@ -629,7 +633,7 @@ static char one_ev_buf[MAX_EVT_SIZE];
 int read_grifc_event(char *pevent, int grifc_id)
 {
    static int i_bar, lastev_count, ev_count, update_cnt, multi_cnt;
-   int *pdata, *ptr, words, pkt_num=0, type, serial, header, word_count; 
+   int *pdata, *ptr, words, pkt_num=0, type, serial, header, word_count;
    static int lastpkt_count, lastmid_count, mid_count;
    time_t curr_time = time(NULL);
    //if( last_event_update == -1 ){ last_event_update = curr_time; }
@@ -705,7 +709,7 @@ int read_grifc_event(char *pevent, int grifc_id)
    printf(" %c - Serial:%8d[", progress[i_bar++%4], SERIAL_NUMBER(pevent));
    printf("%c", ( (i_bar % 1000) ) ? '\r' : '\n' );
 
-   return bk_size(pevent); 
+   return bk_size(pevent);
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -729,7 +733,7 @@ int sndmsg(int sock_fd, struct sockaddr_in *addr, char *message, int msglen, cha
    if( (bytes = recvfrom(sock_fd, reply, max_event_size, flags,
         (struct sockaddr *) &client_addr, (socklen_t *)&addr_len) ) == -1 ){
       fprintf(stderr,"sndmsg: reply expected, but no reply received\n");
-      return(-1); 
+      return(-1);
    }
    return(bytes);
 }
@@ -967,19 +971,19 @@ void discarded_data(int *data, int offset, int address)
       printf("  0x%08x", data[i] );
    }
    //if( (i % 8) != 0 ){printf("\n"); }
-   
+
    fprintf(stdout,"PrevPrev data packet: %d bytes\n", prevprevreplybytes);
    for(i=0; i<(prevprevreplybytes+3)/4; i++){
       fprintf(stdout,"  0x%08x%s", *(((int *)prevprevreply)+i), (((i+1)%6)?"":"\n") );
    }
    fprintf(stdout,"%s\r", ((i%6)?"\n":"") );
-      
+
    fprintf(stdout,"Previous data packet: %d bytes\n", prevreplybytes);
    for(i=0; i<(prevreplybytes+3)/4; i++){
       fprintf(stdout,"  0x%08x%s", *(((int *)prevreply)+i), (((i+1)%6)?"":"\n") );
    }
    fprintf(stdout,"%s\r", ((i%6)?"\n":"") );
-      
+
    fprintf(stdout,"Current data packet: %d bytes\n", replybufbytes);
    for(i=0; i<(replybufbytes+3)/4; i++){
       fprintf(stdout,"  0x%08x%s", *(((int *)replybuf)+i), (((i+1)%6)?"":"\n") );
@@ -1036,7 +1040,7 @@ int grifc_eventread(int data_socket, int addr, int *pdest, int *nentry, int *pkt
    }
    // #################       Store event       #################
    ++offset; *nentry = offset; *type=0; while( offset-- ){
-      if( (data[bufpos] & 0xf000000f) == 0x8000000f ){ *type |= 1; } //scalar 
+      if( (data[bufpos] & 0xf000000f) == 0x8000000f ){ *type |= 1; } //scalar
       if( (data[bufpos] & 0xff000000) == 0xe1000000 ){ *type |= 2; } //rate
       *pdest++ = data[bufpos++];
    }
