@@ -97,12 +97,6 @@ HNDLE hSet;
 TRIGGER_SETTINGS ts;
 
 #define DEFAULT_MASTER "grifadc14" // master
-//#define SERVER_HOSTNAME "grifip07" // slave
-//#define SERVER_HOSTNAME "grifip13" // grif16d
-//#define SERVER_HOSTNAME "grifip12" // grif16c
-//#define SERVER_HOSTNAME "grifip11" // grif16b
-//#define SERVER_HOSTNAME "grifip10" // grif16
-//#define SERVER_HOSTNAME "grsmid00" // test
 
 static int master_grifc, slave_grifc;
 
